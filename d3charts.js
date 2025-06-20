@@ -7,17 +7,57 @@ function clearContainer(containerId) {
 
 function d3RenderBarChart(x, yData, subtype, containerId) {
   clearContainer(containerId);
-  const svg = d3.select(`#${containerId}`)
+  const container = document.getElementById(containerId);
+  const svgWidth = container.clientWidth || 800;
+  const svgHeight = 400;
+
+  const svg = d3.select(container)
     .append("svg")
-    .attr("width", 800)
-    .attr("height", 400);
+    .attr("width", svgWidth)
+    .attr("height", svgHeight);
 
   const margin = { top: 20, right: 30, bottom: 50, left: 60 },
-        width = 800 - margin.left - margin.right,
-        height = 400 - margin.top - margin.bottom;
+        width = svgWidth - margin.left - margin.right,
+        height = svgHeight - margin.top - margin.bottom;
 
   const chart = svg.append("g")
     .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  if (subtype === 'Horizontal') {
+    const yScale = d3.scaleBand()
+      .domain(x)
+      .range([0, height])
+      .padding(0.2);
+
+    const maxX = d3.max(yData.flatMap(d => d.values));
+    const xScale = d3.scaleLinear()
+      .domain([0, maxX])
+      .range([0, width]);
+
+    chart.append("g")
+      .call(d3.axisLeft(yScale).tickFormat(d => d.length > 10 ? d.slice(0, 10) + '…' : d))
+      .attr("color", "#aaa");
+
+    chart.append("g")
+      .attr("transform", `translate(0,${height})`)
+      .call(d3.axisBottom(xScale).ticks(6))
+      .attr("color", "#aaa");
+
+    yData.forEach((yd, seriesIdx) => {
+      chart.selectAll(`.bar-h-${seriesIdx}`)
+        .data(yd.values)
+        .enter()
+        .append("rect")
+        .attr("y", (d, i) => yScale(x[i]) + seriesIdx * (yScale.bandwidth() / yData.length))
+        .attr("x", 0)
+        .attr("height", yScale.bandwidth() / yData.length)
+        .attr("width", d => xScale(d))
+        .attr("fill", colors[seriesIdx % colors.length])
+        .append("title")
+        .text(d => `${yd.name}: ${d}`);
+    });
+    return;
+  }
 
   const xScale = d3.scaleBand()
     .domain(x)
@@ -30,14 +70,16 @@ function d3RenderBarChart(x, yData, subtype, containerId) {
     .range([height, 0]);
 
   chart.append("g")
-    .call(d3.axisLeft(yScale).tickSize(-width).tickPadding(10))
+    .call(d3.axisLeft(yScale).ticks(6).tickSize(-width).tickPadding(10))
     .attr("color", "#aaa");
 
   chart.append("g")
     .attr("transform", `translate(0,${height})`)
-    .call(d3.axisBottom(xScale))
+    .call(d3.axisBottom(xScale).tickFormat(d => d.length > 10 ? d.slice(0, 10) + '…' : d))
     .selectAll("text")
-    .attr("transform", "rotate(-45)")
+    .attr("transform", "rotate(-90)")
+    .attr("dy", "-0.3em")
+    .attr("dx", "-0.8em")
     .style("text-anchor", "end")
     .style("fill", "#ccc");
 
@@ -82,88 +124,129 @@ function d3RenderBarChart(x, yData, subtype, containerId) {
 
 function d3RenderScatterChart(x, yData, subtype, containerId) {
   clearContainer(containerId);
-  const svg = d3.select(`#${containerId}`)
+  const container = document.getElementById(containerId);
+  const svgWidth = container.clientWidth || 800;
+  const svgHeight = 400;
+
+  const svg = d3.select(container)
     .append("svg")
-    .attr("width", 800)
-    .attr("height", 400);
+    .attr("width", svgWidth)
+    .attr("height", svgHeight);
 
   const margin = { top: 20, right: 30, bottom: 50, left: 60 },
-        width = 800 - margin.left - margin.right,
-        height = 400 - margin.top - margin.bottom;
+        width = svgWidth - margin.left - margin.right,
+        height = svgHeight - margin.top - margin.bottom + 10;
 
   const chart = svg.append("g")
     .attr("transform", `translate(${margin.left},${margin.top})`);
 
-  const xNumeric = x.map(v => parseFloat(v));
   const flatY = yData.flatMap(d => d.values);
 
-  const xScale = d3.scaleLinear()
-    .domain([d3.min(xNumeric), d3.max(xNumeric)])
-    .range([0, width]);
+  let xScale;
+  const isCategorical = isNaN(parseFloat(x[0]));
+  if (isCategorical) {
+    xScale = d3.scalePoint()
+      .domain(x)
+      .range([0, width])
+      .padding(0.5);
+  } else {
+    const xNumeric = x.map(v => parseFloat(v));
+    xScale = d3.scaleLinear()
+      .domain([d3.min(xNumeric), d3.max(xNumeric)])
+      .range([0, width]);
+  }
 
   const yScale = d3.scaleLinear()
     .domain([d3.min(flatY), d3.max(flatY)])
     .range([height, 0]);
 
   chart.append("g")
-    .call(d3.axisLeft(yScale))
+    .call(d3.axisLeft(yScale).ticks(6))
     .attr("color", "#aaa");
 
   chart.append("g")
     .attr("transform", `translate(0,${height})`)
-    .call(d3.axisBottom(xScale))
-    .attr("color", "#aaa");
+    .call(d3.axisBottom(xScale).ticks ? d3.axisBottom(xScale).ticks(6) : d3.axisBottom(xScale))
+    .selectAll("text")
+    .attr("transform", "rotate(-90)")
+    .attr("dy", "-0.3em")
+    .attr("dx", "-0.8em")
+    .style("text-anchor", "end")
+    .style("fill", "#ccc");
 
   yData.forEach((yd, i) => {
     chart.selectAll(`circle-${i}`)
       .data(yd.values)
       .enter()
       .append("circle")
-      .attr("cx", (d, idx) => xScale(xNumeric[idx]))
+      .attr("cx", (_, idx) => xScale(x[idx]))
       .attr("cy", d => yScale(d))
       .attr("r", subtype === 'Bubble' ? d => Math.abs(d) / 4 || 5 : 5)
       .attr("fill", colors[i % colors.length]);
   });
 }
 
+
 function d3RenderLineChart(x, yData, subtype, containerId) {
   clearContainer(containerId);
-  const svg = d3.select(`#${containerId}`)
+  const container = document.getElementById(containerId);
+  const svgWidth = container.clientWidth || 800;
+  const svgHeight = 400;
+
+  const svg = d3.select(container)
     .append("svg")
-    .attr("width", 800)
-    .attr("height", 400);
+    .attr("width", svgWidth)
+    .attr("height", svgHeight);
 
   const margin = { top: 20, right: 30, bottom: 50, left: 60 },
-        width = 800 - margin.left - margin.right,
-        height = 400 - margin.top - margin.bottom;
+        width = svgWidth - margin.left - margin.right,
+        height = svgHeight - margin.top - margin.bottom;
 
   const chart = svg.append("g")
     .attr("transform", `translate(${margin.left},${margin.top})`);
 
-  const xNumeric = x.map(v => parseFloat(v));
   const flatY = yData.flatMap(d => d.values);
 
-  const xScale = d3.scaleLinear()
-    .domain([d3.min(xNumeric), d3.max(xNumeric)])
-    .range([0, width]);
+  let xScale;
+  const isCategorical = isNaN(parseFloat(x[0]));
+  if (isCategorical) {
+    xScale = d3.scalePoint()
+      .domain(x)
+      .range([0, width])
+      .padding(0.5);
+  } else {
+    const xNumeric = x.map(v => parseFloat(v));
+    xScale = d3.scaleLinear()
+      .domain([d3.min(xNumeric), d3.max(xNumeric)])
+      .range([0, width]);
+  }
 
   const yScale = d3.scaleLinear()
     .domain([d3.min(flatY), d3.max(flatY)])
     .range([height, 0]);
 
   chart.append("g")
-    .call(d3.axisLeft(yScale))
+    .call(d3.axisLeft(yScale).ticks(6))
     .attr("color", "#aaa");
 
   chart.append("g")
     .attr("transform", `translate(0,${height})`)
-    .call(d3.axisBottom(xScale))
-    .attr("color", "#aaa");
+    .call(d3.axisBottom(xScale).ticks ? d3.axisBottom(xScale).ticks(6) : d3.axisBottom(xScale))
+    .selectAll("text")
+    .attr("transform", "rotate(-90)")
+    .attr("dy", "-0.3em")
+    .attr("dx", "-0.8em")
+    .style("text-anchor", "end")
+    .style("fill", "#ccc");
 
   yData.forEach((yd, i) => {
     const line = d3.line()
-      .x((_, idx) => xScale(xNumeric[idx]))
+      .x((_, idx) => xScale(x[idx]))
       .y(d => yScale(d));
+
+    if (subtype === 'Stepped') {
+      line.curve(d3.curveStep);
+    }
 
     chart.append("path")
       .datum(yd.values)
