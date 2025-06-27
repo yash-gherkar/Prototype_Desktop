@@ -21,6 +21,7 @@
       <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#barTab">Bar Chart</a></li>
       <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#scatterTab">Scatter Plot</a></li>
       <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#lineTab">Line Chart</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#pandasTab">Pandas</a></li>
     </ul>
 
     <!-- Tab Content -->
@@ -37,8 +38,19 @@
         <div id="lineControls" class="mb-3"></div>
         <div id="lineChartContainer"></div>
       </div>
-    </div>
+
+      <div class="tab-pane fade" id="pandasTab">
+  <div class="mb-3">
+    <button class="btn btn-sm btn-light me-1" onclick="runPandas('head')">Head</button>
+    <button class="btn btn-sm btn-light me-1" onclick="runPandas('tail')">Tail</button>
+    <button class="btn btn-sm btn-light me-1" onclick="runPandas('info')">Info</button>
+    <button class="btn btn-sm btn-light" onclick="runPandas('describe')">Describe</button>
   </div>
+  <div id="pandasOutput" class="text-light" style="max-height: 400px; overflow: auto;"></div>
+</div>
+
+
+    </div>
 
  <!-- Libraries -->
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>

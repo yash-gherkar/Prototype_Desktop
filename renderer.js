@@ -1,5 +1,6 @@
 // renderer.js with D3 support integration
 
+let uploadedFilePath = null;
 let parsedData = [];
 let filteredData = [];
 let columns = [];
@@ -12,6 +13,44 @@ document.getElementById('fileInput').addEventListener('change', handleFileUpload
 function handleFileUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
+
+  function handleFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    const fileContent = reader.result;
+
+    // Send file to main process and save it
+    window.pandasAPI.sendFile(file.name, fileContent);
+
+    // Parse in browser for charting
+    if (file.name.endsWith('.csv')) {
+      const result = Papa.parse(fileContent, { header: true, skipEmptyLines: true });
+      parsedData = result.data;
+      filteredData = [...parsedData];
+      columns = result.meta.fields;
+      createAllControls();
+    } else if (file.name.endsWith('.xlsx')) {
+      const workbook = XLSX.read(fileContent, { type: 'binary' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      parsedData = XLSX.utils.sheet_to_json(sheet, { defval: null });
+      filteredData = [...parsedData];
+      columns = Object.keys(parsedData[0]);
+      createAllControls();
+    }
+  };
+
+  // Choose appropriate reader mode
+  if (file.name.endsWith('.csv')) {
+    reader.readAsText(file);
+  } else if (file.name.endsWith('.xlsx')) {
+    reader.readAsBinaryString(file);
+  }
+}
+
 
   const reader = new FileReader();
 
@@ -187,4 +226,17 @@ function drawLineChart() {
 
 function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+
+async function runPandas(command) {
+  const output = document.getElementById('pandasOutput');
+  output.innerHTML = '<em>Loading...</em>';
+
+  try {
+    const result = await window.pandasAPI.runCommand(command, {});
+    output.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+  } catch (err) {
+    output.innerHTML = '<span class="text-danger">Error: ' + err.message + '</span>';
+  }
 }
