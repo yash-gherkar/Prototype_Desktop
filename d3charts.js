@@ -268,4 +268,4 @@ function d3RenderLineChart(x, yData, subtype, containerId) {
       .attr("stroke-width", 2)
       .attr("d", line);
   });
-}
+}  
