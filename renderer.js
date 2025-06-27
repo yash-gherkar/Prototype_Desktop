@@ -240,3 +240,53 @@ async function runPandas(command) {
     output.innerHTML = '<span class="text-danger">Error: ' + err.message + '</span>';
   }
 }
+
+
+function drawBarChart() {
+  const { x, yData, xCol, yCols, subtype, lib } = getChartInput('bar');
+
+  if (lib === 'd3') {
+    d3RenderBarChart(x, yData, subtype, 'barChartContainer');
+    return;
+  }
+
+  if (lib === 'plotly') {
+    const traces = yData.map((yd, i) => ({
+      x: subtype === 'Horizontal' ? yd.values : x,
+      y: subtype === 'Horizontal' ? x : yd.values,
+      type: 'bar',
+      name: yd.name,
+      orientation: subtype === 'Horizontal' ? 'h' : 'v',
+      marker: { color: colors[i % colors.length] }
+    }));
+
+    const buttons = [
+      {
+        method: 'update',
+        label: 'Show All',
+        args: [{ visible: traces.map(() => true) }]
+      },
+      ...yData.map((yd, i) => ({
+        method: 'update',
+        label: yd.name,
+        args: [{ visible: traces.map((_, j) => i === j) }]
+      }))
+    ];
+
+    const layout = {
+      title: `${yCols.join(', ')} vs ${xCol} (${subtype})`,
+      barmode: subtype === 'Stacked' ? 'stack' : subtype === 'Grouped' ? 'group' : 'overlay',
+      plot_bgcolor: '#1e1e2f',
+      paper_bgcolor: '#1e1e2f',
+      font: { color: '#f0f0f0' },
+      legend: { bgcolor: '#2a2a3d' },
+      updatemenus: [{
+        buttons: buttons,
+        direction: 'down',
+        showactive: true
+      }]
+    };
+
+    Plotly.newPlot('barChartContainer', traces, layout);
+  }
+}

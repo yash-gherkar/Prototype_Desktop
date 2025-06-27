@@ -33,6 +33,28 @@ function addTooltip(selection, color, labelAccessor) {
     });
 }
 
+function addZoom(svg, chart, xScale, yScale, xAxis, yAxis, elements, orientation = 'vertical') {
+  const zoom = d3.zoom()
+    .scaleExtent([0.5, 10])
+    .on("zoom", (event) => {
+      const newXScale = event.transform.rescaleX(xScale);
+      const newYScale = event.transform.rescaleY(yScale);
+      xAxis.call(d3.axisBottom(newXScale));
+      yAxis.call(d3.axisLeft(newYScale));
+
+      if (orientation === 'vertical') {
+        elements.attr("x", (d, i) => newXScale(d.xLabel))
+                .attr("y", d => newYScale(d.y1))
+                .attr("height", d => newYScale(d.y0) - newYScale(d.y1));
+      } else {
+        elements.attr("y", (d, i) => newYScale(d.yLabel))
+                .attr("x", d => newXScale(d.x0))
+                .attr("width", d => newXScale(d.x1) - newXScale(d.x0));
+      }
+    });
+  svg.call(zoom);
+}
+
 function d3RenderBarChart(x, yData, subtype, containerId) {
   clearContainer(containerId);
   const container = document.getElementById(containerId);
