@@ -241,52 +241,93 @@ async function runPandas(command) {
   }
 }
 
-
 function drawBarChart() {
-  const { x, yData, xCol, yCols, subtype, lib } = getChartInput('bar');
+  const { xCol, yCols, subtype, lib } = getChartInput('bar');
+
+  // Get unique categories from the actual filteredData (not just labels)
+  const categories = [...new Set(filteredData.map(row => String(row[xCol])))];
 
   if (lib === 'd3') {
+    const x = filteredData.map(row => row[xCol]);
+    const yData = yCols.map(col => ({
+      name: col,
+      values: filteredData.map(row => parseFloat(row[col]))
+    }));
     d3RenderBarChart(x, yData, subtype, 'barChartContainer');
     return;
   }
 
   if (lib === 'plotly') {
-    const traces = yData.map((yd, i) => ({
-      x: subtype === 'Horizontal' ? yd.values : x,
-      y: subtype === 'Horizontal' ? x : yd.values,
-      type: 'bar',
-      name: yd.name,
-      orientation: subtype === 'Horizontal' ? 'h' : 'v',
-      marker: { color: colors[i % colors.length] }
-    }));
+    // Build or reuse filter UI
+    const filterDiv = document.getElementById('barFilterControls') || document.createElement('div');
+    filterDiv.id = 'barFilterControls';
+    filterDiv.className = 'mb-3';
+    document.getElementById('barTab').insertBefore(filterDiv, document.getElementById('barChartContainer'));
 
-    const buttons = [
-      {
-        method: 'update',
-        label: 'Show All',
-        args: [{ visible: traces.map(() => true) }]
-      },
-      ...yData.map((yd, i) => ({
-        method: 'update',
-        label: yd.name,
-        args: [{ visible: traces.map((_, j) => i === j) }]
-      }))
-    ];
+    filterDiv.innerHTML = `
+      <div class="dropdown">
+        <button class="btn btn-secondary dropdown-toggle" type="button" id="categoryDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+          Filter Categories
+        </button>
+        <ul class="dropdown-menu p-2" aria-labelledby="categoryDropdown" style="max-height: 200px; overflow-y: auto;">
+          ${categories.map(cat => `
+            <li>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="${cat}" id="cat-${cat}" checked>
+                <label class="form-check-label text-dark" for="cat-${cat}">${cat}</label>
+              </div>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `;
 
-    const layout = {
-      title: `${yCols.join(', ')} vs ${xCol} (${subtype})`,
-      barmode: subtype === 'Stacked' ? 'stack' : subtype === 'Grouped' ? 'group' : 'overlay',
-      plot_bgcolor: '#1e1e2f',
-      paper_bgcolor: '#1e1e2f',
-      font: { color: '#f0f0f0' },
-      legend: { bgcolor: '#2a2a3d' },
-      updatemenus: [{
-        buttons: buttons,
-        direction: 'down',
-        showactive: true
-      }]
+    const renderChart = (selectedCategories) => {
+      const filteredX = [];
+      const filteredYData = yCols.map(col => ({ name: col, values: [] }));
+
+      filteredData.forEach(row => {
+        const category = String(row[xCol]);
+        if (selectedCategories.includes(category)) {
+          filteredX.push(category);
+          yCols.forEach((col, j) => {
+            filteredYData[j].values.push(parseFloat(row[col]));
+          });
+        }
+      });
+
+      const traces = filteredYData.map((yd, i) => ({
+        x: subtype === 'Horizontal' ? yd.values : filteredX,
+        y: subtype === 'Horizontal' ? filteredX : yd.values,
+        type: 'bar',
+        name: yd.name,
+        orientation: subtype === 'Horizontal' ? 'h' : 'v',
+        marker: { color: colors[i % colors.length] }
+      }));
+
+      const layout = {
+        title: `${yCols.join(', ')} vs ${xCol} (${subtype})`,
+        barmode: subtype === 'Stacked' ? 'stack' : subtype === 'Grouped' ? 'group' : 'overlay',
+        plot_bgcolor: '#1e1e2f',
+        paper_bgcolor: '#1e1e2f',
+        font: { color: '#f0f0f0' },
+        legend: { bgcolor: '#2a2a3d' },
+        xaxis: {
+          type: 'category',
+          automargin: true
+        }
+      };
+
+      Plotly.react('barChartContainer', traces, layout, { responsive: true });
     };
 
-    Plotly.newPlot('barChartContainer', traces, layout);
+    // Initial render
+    renderChart(categories);
+
+    // Add filter interaction
+    filterDiv.addEventListener('change', () => {
+      const selected = Array.from(filterDiv.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+      renderChart(selected);
+    });
   }
 }

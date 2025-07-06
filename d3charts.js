@@ -1,271 +1,231 @@
-// d3charts.js - Full D3.js chart rendering support for Bar, Scatter, and Line Charts
 
-const d3Colors = ['#a6cee3', '#b2df8a', '#fb9a99', '#fdbf6f', '#cab2d6',
-                  '#ffff99', '#1f78b4', '#33a02c', '#e31a1c', '#ff7f00'];
+const d3Colors = d3.schemeSet3;
 
-const tooltip = d3.select("body").append("div")
-  .attr("class", "d3-tooltip")
-  .style("position", "absolute")
-  .style("background", "#333")
-  .style("color", "#fff")
-  .style("padding", "6px")
-  .style("border-radius", "4px")
-  .style("opacity", 0)
-  .style("pointer-events", "none");
-
-function clearContainer(containerId) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = '';
+function clearChart(containerId) {
+  d3.select(`#${containerId}`).selectAll("*").remove();
 }
 
-function addTooltip(selection, color, labelAccessor) {
-  selection
-    .on("mouseover", function(event, d) {
-      tooltip.transition().duration(200).style("opacity", .9);
-      tooltip.html(labelAccessor(d))
-             .style("left", (event.pageX + 10) + "px")
-             .style("top", (event.pageY - 28) + "px");
-      d3.select(this).attr("fill", d3.rgb(color).darker(1));
-    })
-    .on("mouseout", function() {
-      tooltip.transition().duration(500).style("opacity", 0);
-      d3.select(this).attr("fill", color);
-    });
+function createTooltip(containerId) {
+  return d3.select(`#${containerId}`)
+    .append("div")
+    .attr("class", "tooltip")
+    .style("position", "absolute")
+    .style("background", "#333")
+    .style("color", "#fff")
+    .style("padding", "6px 10px")
+    .style("border-radius", "4px")
+    .style("font-size", "13px")
+    .style("pointer-events", "none")
+    .style("opacity", 0);
 }
 
-function addZoom(svg, chart, xScale, yScale, xAxis, yAxis, elements, orientation = 'vertical') {
-  const zoom = d3.zoom()
-    .scaleExtent([0.5, 10])
-    .on("zoom", (event) => {
-      const newXScale = event.transform.rescaleX(xScale);
-      const newYScale = event.transform.rescaleY(yScale);
-      xAxis.call(d3.axisBottom(newXScale));
-      yAxis.call(d3.axisLeft(newYScale));
-
-      if (orientation === 'vertical') {
-        elements.attr("x", (d, i) => newXScale(d.xLabel))
-                .attr("y", d => newYScale(d.y1))
-                .attr("height", d => newYScale(d.y0) - newYScale(d.y1));
-      } else {
-        elements.attr("y", (d, i) => newYScale(d.yLabel))
-                .attr("x", d => newXScale(d.x0))
-                .attr("width", d => newXScale(d.x1) - newXScale(d.x0));
-      }
-    });
-  svg.call(zoom);
+function addZoom(svgRoot, contentGroup, xScale, yScale, xAxisG, yAxisG, drawCallback) {
+  svgRoot.call(
+    d3.zoom()
+      .scaleExtent([1, 8])
+      .translateExtent([[0, 0], [svgRoot.attr("width"), svgRoot.attr("height")]])
+      .on("zoom", (event) => {
+        const t = event.transform;
+        const zx = t.rescaleX(xScale);
+        const zy = t.rescaleY(yScale);
+        xAxisG.call(d3.axisBottom(zx)).selectAll("text").attr("fill", "#fff");
+        yAxisG.call(d3.axisLeft(zy)).selectAll("text").attr("fill", "#fff");
+        drawCallback(zx, zy);
+      })
+  );
 }
 
+// BAR CHART
 function d3RenderBarChart(x, yData, subtype, containerId) {
-  clearContainer(containerId);
-  const container = document.getElementById(containerId);
-  const svgWidth = container.clientWidth || 800;
-  const svgHeight = 400;
+  clearChart(containerId);
+  const tooltip = createTooltip(containerId);
 
-  const svg = d3.select(container)
+  const margin = { top: 40, right: 30, bottom: 60, left: 60 };
+  const width = 800 - margin.left - margin.right;
+  const height = 400 - margin.top - margin.bottom;
+
+  const svgRoot = d3.select(`#${containerId}`)
     .append("svg")
-    .attr("width", svgWidth)
-    .attr("height", svgHeight);
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .style("background", "#1e1e2f");
 
-  const margin = { top: 20, right: 30, bottom: 50, left: 60 },
-        width = svgWidth - margin.left - margin.right,
-        height = svgHeight - margin.top - margin.bottom;
+  const svg = svgRoot.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+  const content = svg.append("g");
 
-  const chart = svg.append("g")
-    .attr("transform", `translate(${margin.left},${margin.top})`);
+  const x0 = d3.scaleBand().domain(x).range([0, width]).padding(0.1);
+  const y = d3.scaleLinear().domain([0, d3.max(yData.flatMap(d => d.values))]).nice().range([height, 0]);
+  const color = d3.scaleOrdinal(d3Colors);
 
-  if (subtype === 'Horizontal') {
-    const yScale = d3.scaleBand()
-      .domain(x)
-      .range([0, height])
-      .padding(0.2);
+  const xAxisG = svg.append("g").attr("transform", `translate(0,${height})`);
+  const yAxisG = svg.append("g");
 
-    const maxX = d3.max(yData.flatMap(d => d.values));
-    const xScale = d3.scaleLinear()
-      .domain([0, maxX])
-      .range([0, width]);
+  function drawBars(zx, zy) {
+    content.selectAll("g").remove();
 
-    chart.append("g").call(d3.axisLeft(yScale));
-    chart.append("g")
-      .attr("transform", `translate(0,${height})`)
-      .call(d3.axisBottom(xScale));
+    const group = content.selectAll("g")
+      .data(yData)
+      .join("g")
+      .attr("fill", (_, i) => color(i));
 
-    yData.forEach((yd, seriesIdx) => {
-      const bars = chart.selectAll(`.bar-h-${seriesIdx}`)
-        .data(yd.values)
-        .enter()
-        .append("rect")
-        .attr("y", (d, i) => yScale(x[i]) + seriesIdx * (yScale.bandwidth() / yData.length))
-        .attr("x", 0)
-        .attr("height", yScale.bandwidth() / yData.length)
-        .attr("width", d => xScale(d))
-        .attr("fill", d3Colors[seriesIdx % d3Colors.length]);
-
-      addTooltip(bars, d3Colors[seriesIdx % d3Colors.length], d => `${yd.name}: ${d}`);
-    });
-    return;
+    group.selectAll("rect")
+      .data((d, i) => d.values.map((v, j) => ({ key: x[j], value: v, i, label: d.name })))
+      .join("rect")
+      .attr("x", d => zx(d.key) + zx.bandwidth() / yData.length * d.i)
+      .attr("width", zx.bandwidth() / yData.length)
+      .attr("y", d => zy(d.value))
+      .attr("height", d => height - zy(d.value))
+      .on("mousemove", (e, d) => {
+        tooltip.style("opacity", 1)
+          .html(`<b>${d.label}</b><br>${d.key}: ${d.value}`)
+          .style("left", `${e.pageX + 10}px`)
+          .style("top", `${e.pageY - 30}px`);
+      })
+      .on("mouseleave", () => tooltip.style("opacity", 0));
   }
 
-  const xScale = d3.scaleBand()
-    .domain(x)
-    .range([0, width])
-    .padding(0.2);
+  xAxisG.call(d3.axisBottom(x0)).selectAll("text").attr("fill", "#fff");
+  yAxisG.call(d3.axisLeft(y)).selectAll("text").attr("fill", "#fff");
 
-  const maxY = d3.max(yData.flatMap(d => d.values));
-  const yScale = d3.scaleLinear()
-    .domain([0, maxY])
-    .range([height, 0]);
+  svg.append("text")
+    .attr("x", width / 2).attr("y", -10)
+    .attr("text-anchor", "middle")
+    .style("fill", "#fff").style("font-size", "16px")
+    .text(`Bar Chart (${subtype})`);
 
-  chart.append("g").call(d3.axisLeft(yScale));
-  chart.append("g")
-    .attr("transform", `translate(0,${height})`)
-    .call(d3.axisBottom(xScale))
-    .selectAll("text")
-    .attr("transform", "rotate(-90)")
-    .attr("dy", "-0.3em")
-    .attr("dx", "-0.8em")
-    .style("text-anchor", "end");
-
-  if (subtype === 'Stacked') {
-    const stackedData = x.map((label, i) => {
-      const obj = {};
-      yData.forEach(yd => obj[yd.name] = yd.values[i]);
-      return obj;
-    });
-
-    const stack = d3.stack().keys(yData.map(d => d.name));
-    const series = stack(stackedData);
-
-    chart.selectAll(".stack").data(series).enter().append("g")
-      .attr("fill", (d, i) => d3Colors[i % d3Colors.length])
-      .selectAll("rect")
-      .data(d => d)
-      .enter().append("rect")
-      .attr("x", (_, i) => xScale(x[i]))
-      .attr("y", d => yScale(d[1]))
-      .attr("height", d => yScale(d[0]) - yScale(d[1]) < 0 ? yScale(d[1]) - yScale(d[0]) : yScale(d[0]) - yScale(d[1]))
-
-      .attr("width", xScale.bandwidth())
-      .each(function(d, i, nodes) {
-        const seriesIdx = series.findIndex(s => s.includes(d));
-        addTooltip(d3.select(this), d3Colors[seriesIdx % d3Colors.length], () => `${yData[seriesIdx].name}: ${d[1] - d[0]}`);
-      });
-  } else {
-    yData.forEach((yd, seriesIdx) => {
-      const bars = chart.selectAll(`.bar-${seriesIdx}`)
-        .data(yd.values)
-        .enter()
-        .append("rect")
-        .attr("x", (d, i) => xScale(x[i]) + seriesIdx * (xScale.bandwidth() / yData.length))
-        .attr("y", d => yScale(d))
-        .attr("width", xScale.bandwidth() / yData.length)
-        .attr("height", d => height - yScale(d))
-        .attr("fill", d3Colors[seriesIdx % d3Colors.length]);
-
-      addTooltip(bars, d3Colors[seriesIdx % d3Colors.length], d => `${yd.name}: ${d}`);
-    });
-  }
+  drawBars(x0, y);
+  addZoom(svgRoot, content, x0, y, xAxisG, yAxisG, drawBars);
 }
 
+// SCATTER CHART
 function d3RenderScatterChart(x, yData, subtype, containerId) {
-  clearContainer(containerId);
-  const container = document.getElementById(containerId);
-  const svgWidth = container.clientWidth || 800;
-  const svgHeight = 400;
+  clearChart(containerId);
+  const tooltip = createTooltip(containerId);
 
-  const svg = d3.select(container)
+  const margin = { top: 40, right: 30, bottom: 60, left: 60 };
+  const width = 800 - margin.left - margin.right;
+  const height = 400 - margin.top - margin.bottom;
+
+  const svgRoot = d3.select(`#${containerId}`)
     .append("svg")
-    .attr("width", svgWidth)
-    .attr("height", svgHeight);
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .style("background", "#1e1e2f");
 
-  const margin = { top: 20, right: 30, bottom: 50, left: 60 },
-        width = svgWidth - margin.left - margin.right,
-        height = svgHeight - margin.top - margin.bottom;
+  const svg = svgRoot.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+  const content = svg.append("g");
 
-  const chart = svg.append("g")
-    .attr("transform", `translate(${margin.left},${margin.top})`);
+  const xScale = d3.scalePoint().domain(x).range([0, width]);
+  const yScale = d3.scaleLinear().domain([0, d3.max(yData.flatMap(d => d.values))]).nice().range([height, 0]);
+  const color = d3.scaleOrdinal(d3Colors);
 
-  const flatY = yData.flatMap(d => d.values);
-  const isCategorical = isNaN(parseFloat(x[0]));
-  const xScale = isCategorical ?
-    d3.scalePoint().domain(x).range([0, width]).padding(0.5) :
-    d3.scaleLinear().domain(d3.extent(x.map(v => +v))).range([0, width]);
+  const xAxisG = svg.append("g").attr("transform", `translate(0,${height})`);
+  const yAxisG = svg.append("g");
 
-  const yScale = d3.scaleLinear().domain(d3.extent(flatY)).range([height, 0]);
+  function drawPoints(zx, zy) {
+    content.selectAll("g").remove();
 
-  chart.append("g").call(d3.axisLeft(yScale));
-  chart.append("g")
-    .attr("transform", `translate(0,${height})`)
-    .call(d3.axisBottom(xScale))
-    .selectAll("text")
-    .attr("transform", "rotate(-90)")
-    .attr("dy", "-0.3em")
-    .attr("dx", "-0.8em")
-    .style("text-anchor", "end");
+    const group = content.selectAll("g")
+      .data(yData)
+      .join("g")
+      .attr("fill", (_, i) => color(i));
 
-  yData.forEach((yd, i) => {
-    const circles = chart.selectAll(`circle-${i}`)
-      .data(yd.values)
-      .enter()
-      .append("circle")
-      .attr("cx", (_, idx) => xScale(x[idx]))
-      .attr("cy", d => yScale(d))
-      .attr("r", subtype === 'Bubble' ? d => Math.abs(d) / 4 || 5 : 5)
-      .attr("fill", d3Colors[i % d3Colors.length]);
+    group.selectAll("circle")
+      .data((d, i) => d.values.map((v, j) => ({ x: x[j], y: v, label: d.name })))
+      .join("circle")
+      .attr("cx", d => zx(d.x))
+      .attr("cy", d => zy(d.y))
+      .attr("r", 5)
+      .on("mousemove", (e, d) => {
+        tooltip.style("opacity", 1)
+          .html(`<b>${d.label}</b><br>${d.x}: ${d.y}`)
+          .style("left", `${e.pageX + 10}px`)
+          .style("top", `${e.pageY - 30}px`);
+      })
+      .on("mouseleave", () => tooltip.style("opacity", 0));
+  }
 
-    addTooltip(circles, d3Colors[i % d3Colors.length], d => `${yd.name}: ${d}`);
-  });
+  xAxisG.call(d3.axisBottom(xScale)).selectAll("text").attr("fill", "#fff");
+  yAxisG.call(d3.axisLeft(yScale)).selectAll("text").attr("fill", "#fff");
+
+  svg.append("text")
+    .attr("x", width / 2).attr("y", -10)
+    .attr("text-anchor", "middle")
+    .style("fill", "#fff").style("font-size", "16px")
+    .text(`Scatter Plot (${subtype})`);
+
+  drawPoints(xScale, yScale);
+  addZoom(svgRoot, content, xScale, yScale, xAxisG, yAxisG, drawPoints);
 }
 
+// LINE CHART
 function d3RenderLineChart(x, yData, subtype, containerId) {
-  clearContainer(containerId);
-  const container = document.getElementById(containerId);
-  const svgWidth = container.clientWidth || 800;
-  const svgHeight = 400;
+  clearChart(containerId);
+  const tooltip = createTooltip(containerId);
 
-  const svg = d3.select(container)
+  const margin = { top: 40, right: 30, bottom: 60, left: 60 };
+  const width = 800 - margin.left - margin.right;
+  const height = 400 - margin.top - margin.bottom;
+
+  const svgRoot = d3.select(`#${containerId}`)
     .append("svg")
-    .attr("width", svgWidth)
-    .attr("height", svgHeight);
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .style("background", "#1e1e2f");
 
-  const margin = { top: 20, right: 30, bottom: 50, left: 60 },
-        width = svgWidth - margin.left - margin.right,
-        height = svgHeight - margin.top - margin.bottom;
+  const svg = svgRoot.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+  const content = svg.append("g");
 
-  const chart = svg.append("g")
-    .attr("transform", `translate(${margin.left},${margin.top})`);
+  const xScale = d3.scalePoint().domain(x).range([0, width]);
+  const yScale = d3.scaleLinear().domain([0, d3.max(yData.flatMap(d => d.values))]).nice().range([height, 0]);
+  const color = d3.scaleOrdinal(d3Colors);
 
-  const flatY = yData.flatMap(d => d.values);
-  const isCategorical = isNaN(parseFloat(x[0]));
-  const xScale = isCategorical ?
-    d3.scalePoint().domain(x).range([0, width]).padding(0.5) :
-    d3.scaleLinear().domain(d3.extent(x.map(v => +v))).range([0, width]);
+  const xAxisG = svg.append("g").attr("transform", `translate(0,${height})`);
+  const yAxisG = svg.append("g");
 
-  const yScale = d3.scaleLinear().domain(d3.extent(flatY)).range([height, 0]);
+  function drawLines(zx, zy) {
+    content.selectAll("*").remove();
 
-  chart.append("g").call(d3.axisLeft(yScale));
-  chart.append("g")
-    .attr("transform", `translate(0,${height})`)
-    .call(d3.axisBottom(xScale))
-    .selectAll("text")
-    .attr("transform", "rotate(-90)")
-    .attr("dy", "-0.3em")
-    .attr("dx", "-0.8em")
-    .style("text-anchor", "end");
+    yData.forEach((series, i) => {
+      const line = d3.line()
+        .x((_, j) => zx(x[j]))
+        .y(d => zy(d));
 
-  yData.forEach((yd, i) => {
-    const line = d3.line()
-      .x((_, idx) => xScale(x[idx]))
-      .y(d => yScale(d));
+      if (subtype === 'Stepped') line.curve(d3.curveStepAfter);
 
-    if (subtype === 'Stepped') {
-      line.curve(d3.curveStep);
-    }
+      content.append("path")
+        .datum(series.values)
+        .attr("fill", "none")
+        .attr("stroke", color(i))
+        .attr("stroke-width", 2)
+        .attr("d", line);
 
-    chart.append("path")
-      .datum(yd.values)
-      .attr("fill", "none")
-      .attr("stroke", d3Colors[i % d3Colors.length])
-      .attr("stroke-width", 2)
-      .attr("d", line);
-  });
-}  
+      content.selectAll(`.point-${i}`)
+        .data(series.values.map((v, j) => ({ x: x[j], y: v, label: series.name })))
+        .join("circle")
+        .attr("cx", d => zx(d.x))
+        .attr("cy", d => zy(d.y))
+        .attr("r", 4)
+        .style("fill", color(i))
+        .on("mousemove", (e, d) => {
+          tooltip.style("opacity", 1)
+            .html(`<b>${d.label}</b><br>${d.x}: ${d.y}`)
+            .style("left", `${e.pageX + 10}px`)
+            .style("top", `${e.pageY - 30}px`);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+    });
+  }
+
+  xAxisG.call(d3.axisBottom(xScale)).selectAll("text").attr("fill", "#fff");
+  yAxisG.call(d3.axisLeft(yScale)).selectAll("text").attr("fill", "#fff");
+
+  svg.append("text")
+    .attr("x", width / 2).attr("y", -10)
+    .attr("text-anchor", "middle")
+    .style("fill", "#fff").style("font-size", "16px")
+    .text(`Line Chart (${subtype})`);
+
+  drawLines(xScale, yScale);
+  addZoom(svgRoot, content, xScale, yScale, xAxisG, yAxisG, drawLines);
+}
