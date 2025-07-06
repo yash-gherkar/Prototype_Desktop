@@ -331,3 +331,112 @@ function drawBarChart() {
     });
   }
 }
+
+
+function drawScatterChart() {
+  const xCol = document.getElementById('scatterX').value;
+  const yCol = document.getElementById('scatterY').selectedOptions[0]?.value;
+  const subtype = document.getElementById('scatterSubtype').value;
+  const lib = document.getElementById('scatterLib').value;
+
+  if (!xCol || !yCol) return;
+
+  if (lib === 'd3') {
+    const x = filteredData.map(row => row[xCol]);
+    const yData = [{
+      name: yCol,
+      values: filteredData.map(row => parseFloat(row[yCol]))
+    }];
+    d3RenderScatterChart(x, yData, subtype, 'scatterChartContainer');
+    return;
+  }
+
+  if (lib === 'plotly') {
+    const xVals = filteredData.map(row => parseFloat(row[xCol])).filter(v => !isNaN(v));
+    const yVals = filteredData.map(row => parseFloat(row[yCol])).filter(v => !isNaN(v));
+
+    const minX = Math.min(...xVals);
+    const maxX = Math.max(...xVals);
+    const minY = Math.min(...yVals);
+    const maxY = Math.max(...yVals);
+
+    // Create or reuse UI
+    const sliderDiv = document.getElementById('scatterFilterControls') || document.createElement('div');
+    sliderDiv.id = 'scatterFilterControls';
+    sliderDiv.className = 'mb-3';
+    document.getElementById('scatterTab').insertBefore(sliderDiv, document.getElementById('scatterChartContainer'));
+
+    sliderDiv.innerHTML = `
+      <label class="form-label text-light">X-Axis Range: <span id="xRangeLabel">${minX} - ${maxX}</span></label>
+      <input type="range" id="xMin" min="${minX}" max="${maxX}" value="${minX}" step="1" class="form-range mb-2">
+      <input type="range" id="xMax" min="${minX}" max="${maxX}" value="${maxX}" step="1" class="form-range mb-3">
+
+      <label class="form-label text-light">Y-Axis Range: <span id="yRangeLabel">${minY} - ${maxY}</span></label>
+      <input type="range" id="yMin" min="${minY}" max="${maxY}" value="${minY}" step="1" class="form-range mb-2">
+      <input type="range" id="yMax" min="${minY}" max="${maxY}" value="${maxY}" step="1" class="form-range">
+    `;
+
+    const renderChart = (xMin, xMax, yMin, yMax) => {
+      const filtered = filteredData.filter(row => {
+        const xv = parseFloat(row[xCol]);
+        const yv = parseFloat(row[yCol]);
+        return !isNaN(xv) && !isNaN(yv) && xv >= xMin && xv <= xMax && yv >= yMin && yv <= yMax;
+      });
+
+      const x = filtered.map(row => row[xCol]);
+      const y = filtered.map(row => parseFloat(row[yCol]));
+
+      const trace = {
+        x: x,
+        y: y,
+        mode: subtype === 'Lines + Markers' ? 'lines+markers' : 'markers',
+        type: 'scatter',
+        name: yCol,
+        marker: {
+          color: colors[0],
+          size: subtype === 'Bubble' ? y.map(v => Math.abs(v) / 2 || 5) : 8
+        }
+      };
+
+      const layout = {
+        title: `${yCol} vs ${xCol} (${subtype})`,
+        plot_bgcolor: '#1e1e2f',
+        paper_bgcolor: '#1e1e2f',
+        font: { color: '#f0f0f0' },
+        legend: { bgcolor: '#2a2a3d' },
+        xaxis: { range: [xMin, xMax] },
+        yaxis: { range: [yMin, yMax] }
+      };
+
+      Plotly.react('scatterChartContainer', [trace], layout);
+    };
+
+    // Initial render
+    renderChart(minX, maxX, minY, maxY);
+
+    // Inputs and listeners
+    const xMinInput = document.getElementById('xMin');
+    const xMaxInput = document.getElementById('xMax');
+    const yMinInput = document.getElementById('yMin');
+    const yMaxInput = document.getElementById('yMax');
+    const xLabel = document.getElementById('xRangeLabel');
+    const yLabel = document.getElementById('yRangeLabel');
+
+    const update = () => {
+      let xMin = parseFloat(xMinInput.value);
+      let xMax = parseFloat(xMaxInput.value);
+      if (xMin > xMax) [xMin, xMax] = [xMax, xMin];
+
+      let yMin = parseFloat(yMinInput.value);
+      let yMax = parseFloat(yMaxInput.value);
+      if (yMin > yMax) [yMin, yMax] = [yMax, yMin];
+
+      xLabel.textContent = `${xMin} - ${xMax}`;
+      yLabel.textContent = `${yMin} - ${yMax}`;
+
+      renderChart(xMin, xMax, yMin, yMax);
+    };
+
+    [xMinInput, xMaxInput, yMinInput, yMaxInput].forEach(input => input.addEventListener('input', update));
+  }
+}
